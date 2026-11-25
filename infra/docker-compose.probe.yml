@@ -1,0 +1,51 @@
+# Stateless Probe Node (MY-KUL / EU-FRA): строго 2 контейнера, только TCP 443, без БД и WireGuard
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: probe-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PROBE_DOMAIN: ${PROBE_DOMAIN:?PROBE_DOMAIN must be set}
+    volumes:
+      - ./caddy/Caddyfile.probe:/etc/caddy/Caddyfile:ro
+      - probe_caddy_data:/data
+      - probe_caddy_config:/config
+    depends_on:
+      - probe-daemon
+    deploy:
+      resources:
+        limits:
+          cpus: "0.20"
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  probe-daemon:
+    image: ${PROBE_IMAGE:-ghcr.io/netpulse-my/netpulse-probe:latest}
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.probe
+    container_name: probe-daemon
+    restart: unless-stopped
+    env_file:
+      - ../.env.probe
+    deploy:
+      resources:
+        limits:
+          cpus: "0.80"
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+volumes:
+  probe_caddy_data:
+  probe_caddy_config:

@@ -1,0 +1,23 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+!.env.probe.example
+
+# Python / build / caches
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# GeoIP binary databases (downloaded separately)
+data/geoip/*.mmdb
+
+# Logs & OS junk
+*.log
+.DS_Store

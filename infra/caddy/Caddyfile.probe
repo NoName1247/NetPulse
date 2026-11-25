@@ -1,0 +1,21 @@
+{
+    admin off
+}
+
+{$PROBE_DOMAIN} {
+    tls {
+        protocols tls1.3
+    }
+
+    # Намеренно БЕЗ директивы encode (сжатие выключено для честного замера скорости на /probe/ws)
+    @allowed path /probe/ws /healthz
+    handle @allowed {
+        reverse_proxy probe-daemon:8000 {
+            flush_interval -1
+        }
+    }
+
+    handle {
+        respond 404
+    }
+}

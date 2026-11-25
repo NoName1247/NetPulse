@@ -1,0 +1,102 @@
+# Lean MVP Central VPS: строго 3 контейнера (caddy + 1-worker app + vanilla postgres:16), 0 Valkey
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: netpulse-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      API_DOMAIN: ${API_DOMAIN:-api.netpulse.my}
+      ORIGIN_SECRET: ${ORIGIN_SECRET:?ORIGIN_SECRET must be set}
+    volumes:
+      - ./caddy/Caddyfile.central:/etc/caddy/Caddyfile:ro
+      - app_sock:/run/app
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    deploy:
+      resources:
+        limits:
+          cpus: "0.20"
+          memory: 96M
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  app:
+    image: ${CENTRAL_IMAGE:-ghcr.io/netpulse-my/netpulse-central:latest}
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.central
+    container_name: netpulse-app
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    volumes:
+      - app_sock:/run/app
+      - ${GEOIP_HOST_DIR:-/opt/netpulse/geoip}:/data/geoip:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.80"
+          memory: 384M
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: netpulse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-netpulse}
+      POSTGRES_USER: ${POSTGRES_USER:-netpulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "max_connections=30"
+      - "-c"
+      - "effective_cache_size=1536MB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "timezone=UTC"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../central/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ../central/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-netpulse} -d ${POSTGRES_DB:-netpulse}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 1536M
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+volumes:
+  app_sock:
+  pg_data:
+  caddy_data:
+  caddy_config:

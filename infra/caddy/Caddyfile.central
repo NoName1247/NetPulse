@@ -1,0 +1,24 @@
+{
+    admin off
+}
+
+{$API_DOMAIN} {
+    tls {
+        protocols tls1.3
+    }
+
+    # Проверка X-Origin-Secret, подставляемого Cloudflare Transform Rules
+    @blocked {
+        not path /healthz
+        not header X-Origin-Secret {$ORIGIN_SECRET}
+    }
+    respond @blocked 403
+
+    encode br zstd gzip
+
+    reverse_proxy unix//run/app/uvicorn.sock {
+        header_up Host {host}
+        header_up CF-Connecting-IP {header.CF-Connecting-IP}
+        header_up X-Origin-Secret {header.X-Origin-Secret}
+    }
+}

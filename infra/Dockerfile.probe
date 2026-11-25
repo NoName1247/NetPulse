@@ -1,0 +1,26 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+COPY pyproject.toml ./
+COPY shared_proto.py ./
+COPY probe ./probe
+
+RUN mkdir -p central && \
+    pip install --no-cache-dir --no-deps . && \
+    rm -rf central && \
+    pip install --no-cache-dir "fastapi>=0.115.0,<1.0.0" "uvicorn[standard]>=0.32.0,<1.0.0" "websockets>=13.1,<16.0" && \
+    groupadd -r probe && useradd -r -g probe probe && \
+    chown -R probe:probe /app
+
+USER probe
+
+EXPOSE 8000
+
+# Отключённый per-message-deflate исключает ложное сжатие буфера при замере скорости
+CMD ["uvicorn", "probe.main:app", "--host", "0.0.0.0", "--port", "8000", "--ws", "websockets", "--ws-per-message-deflate", "false", "--ws-max-size", "131072", "--no-access-log"]

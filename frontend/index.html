@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="NetPulse MY — Crowdsourced Malaysia telecom & ISP outage monitor" />
+    <meta name="api-base" content="/dgcc" />
+    <meta name="turnstile-sitekey" content="" />
+    <title>NetPulse MY — Malaysia Network & Outage Monitor</title>
+    <link rel="stylesheet" href="./vendor/leaflet.css" />
+    <link rel="stylesheet" href="./styles.css?v=4" />
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+    <script src="./vendor/leaflet.js"></script>
+</head>
+
+<body>
+    <header class="topbar">
+        <div class="container topbar-inner">
+            <div class="brand">
+                <span class="pulse-dot" aria-hidden="true"></span>
+                <span>NetPulse <strong>MY</strong></span>
+            </div>
+            <div class="lang-switch" role="group" aria-label="Language">
+                <button type="button" class="lang-btn" data-lang="en">EN</button>
+                <button type="button" class="lang-btn" data-lang="bm">BM</button>
+                <button type="button" class="lang-btn" data-lang="ru">RU</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="card hero-card">
+            <h1 data-i18n="hero_title">Check Your Malaysia Network & Outages</h1>
+            <p class="muted" data-i18n="hero_subtitle">
+                5-second local (MY) + international (EU) probe. Zero accounts, zero IP or GPS storage (PDPA
+                Privacy-by-Design).
+            </p>
+
+            <div class="controls-row">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="opt-gps" />
+                    <span data-i18n="gps_label">Use district GPS (quantized to ~0.74 km² H3 cell, raw coordinates
+                        discarded)</span>
+                </label>
+            </div>
+
+            <div id="turnstile-container" class="turnstile-box"></div>
+
+            <div class="action-row">
+                <button type="button" id="btn-run-test" class="btn-primary" data-i18n="btn_start">
+                    Run Diagnostic Test
+                </button>
+            </div>
+
+            <div id="progress-wrap" class="progress-wrap hidden" aria-live="polite">
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+                <div id="progress-status" class="progress-status muted"></div>
+            </div>
+
+            <div id="error-banner" class="banner banner-error hidden" role="alert"></div>
+        </section>
+
+        <section id="result-section" class="card result-card hidden" aria-live="polite">
+            <div class="result-header">
+                <div>
+                    <span id="verdict-badge" class="badge"></span>
+                    <h2 id="result-carrier-district" class="result-title"></h2>
+                </div>
+                <span id="result-net-meta" class="muted small"></span>
+            </div>
+
+            <p id="verdict-text" class="verdict-text"></p>
+            <div id="vpn-warning" class="banner banner-warn hidden"></div>
+
+            <div class="metrics-grid">
+                <div class="metric-box">
+                    <div class="metric-label" data-i18n="m_local_rtt">Local RTT (MY)</div>
+                    <div id="m-local-rtt" class="metric-value">—</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label" data-i18n="m_intl_rtt">Intl RTT (EU)</div>
+                    <div id="m-intl-rtt" class="metric-value">—</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label" data-i18n="m_dl">Download</div>
+                    <div id="m-dl" class="metric-value">—</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label" data-i18n="m_ul">Upload</div>
+                    <div id="m-ul" class="metric-value">—</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label" data-i18n="m_stall">Stall Ratio</div>
+                    <div id="m-stall" class="metric-value">—</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label" data-i18n="m_district">District Health</div>
+                    <div id="m-district" class="metric-value">—</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="section-header">
+                <h2 data-i18n="incidents_title">Active Outages in Malaysia</h2>
+                <button type="button" id="btn-refresh-incidents" class="btn-ghost"
+                    data-i18n="btn_refresh">Refresh</button>
+            </div>
+            <div id="incidents-list" class="incidents-list"></div>
+        </section>
+
+        <section class="card">
+            <div class="section-header">
+                <h2 data-i18n="heatmap_title">Coverage & Quality Elevation Map</h2>
+                <div class="header-actions">
+                    <span id="heatmap-meta" class="muted small"></span>
+                    <button type="button" id="btn-fit-map" class="btn-ghost" data-i18n="btn_fit_map">Fit Map</button>
+                </div>
+            </div>
+
+            <div class="filter-bar">
+                <select id="filter-carrier" aria-label="Carrier">
+                    <option value="all" data-i18n="all_carriers">All Carriers</option>
+                    <option value="maxis">Maxis / Hotlink</option>
+                    <option value="celcomdigi">CelcomDigi</option>
+                    <option value="umobile">U Mobile</option>
+                    <option value="unifi">Unifi (TM)</option>
+                    <option value="time">TIME dotCom</option>
+                    <option value="yes">Yes 5G (YTL)</option>
+                </select>
+
+                <select id="filter-window" aria-label="Window">
+                    <option value="24h" selected>24h</option>
+                    <option value="1h">1h</option>
+                    <option value="7d">7d</option>
+                </select>
+
+                <select id="filter-res" aria-label="H3 Resolution">
+                    <option value="8" selected>Point Zones (~460 m)</option>
+                    <option value="6">Districts (~3.2 km)</option>
+                </select>
+            </div>
+
+            <div class="stats-strip" id="stats-summary">
+                <div class="stat-pill">
+                    <span class="stat-label" data-i18n="s_zones">Zones</span>
+                    <strong id="stat-zones">0</strong>
+                </div>
+                <div class="stat-pill">
+                    <span class="stat-label" data-i18n="s_users">Unique Users</span>
+                    <strong id="stat-users">0</strong>
+                </div>
+                <div class="stat-pill">
+                    <span class="stat-label" data-i18n="s_quality">Avg Quality</span>
+                    <strong id="stat-quality">—</strong>
+                </div>
+                <div class="stat-pill">
+                    <span class="stat-label" data-i18n="s_dl">Median DL</span>
+                    <strong id="stat-dl">—</strong>
+                </div>
+                <div class="stat-pill">
+                    <span class="stat-label" data-i18n="s_rtt">Avg P95 RTT</span>
+                    <strong id="stat-rtt">—</strong>
+                </div>
+            </div>
+
+            <div class="map-shell">
+                <div id="quality-map" class="quality-map" aria-label="Network quality map"></div>
+                <div class="map-legend">
+                    <span class="legend-bad" data-i18n="legend_bad">0 Outage</span>
+                    <span class="legend-bar" aria-hidden="true"></span>
+                    <span class="legend-good" data-i18n="legend_good">100 Excellent</span>
+                </div>
+            </div>
+
+            <div id="heatmap-empty" class="muted small map-empty hidden"></div>
+            <div id="heatmap-grid" class="hex-grid"></div>
+        </section>
+    </main>
+
+    <footer class="container footer muted small">
+        <span data-i18n="footer_privacy">
+            Malaysia PDPA 2010 Privacy-by-Design: IP addresses are hashed with daily MYT salt and discarded; GPS is
+            quantized to H3 Res 8.
+        </span>
+    </footer>
+
+    <script type="module" src="./app.js?v=5"></script>
+</body>
+
+</html>

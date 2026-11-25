@@ -1,0 +1,91 @@
+name: CI & Zero-Downtime Deploy
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  REGISTRY: ghcr.io
+  CENTRAL_IMAGE: ghcr.io/${{ github.repository_owner }}/netpulse-central
+  PROBE_IMAGE: ghcr.io/${{ github.repository_owner }}/netpulse-probe
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev,probe]"
+
+      - name: Run Ruff linter
+        run: ruff check .
+
+      - name: Run Pytest suite
+        run: pytest -q
+
+  build-and-push:
+    needs: lint-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push Central image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile.central
+          push: true
+          tags: |
+            ${{ env.CENTRAL_IMAGE }}:latest
+            ${{ env.CENTRAL_IMAGE }}:${{ github.sha }}
+
+      - name: Build & Push Probe image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile.probe
+          push: true
+          tags: |
+            ${{ env.PROBE_IMAGE }}:latest
+            ${{ env.PROBE_IMAGE }}:${{ github.sha }}
+
+  deploy-central:
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Central VPS via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.CENTRAL_VPS_HOST }}
+          username: ${{ secrets.CENTRAL_VPS_USER }}
+          key: ${{ secrets.CENTRAL_VPS_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/netpulse
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            docker compose -f infra/docker-compose.central.yml pull app
+            docker compose -f infra/docker-compose.central.yml up -d --remove-orphans
+            docker image prune -f
